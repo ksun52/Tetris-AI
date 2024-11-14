@@ -13,7 +13,6 @@ class TetrisNode:
         self.parent = parent
         self.children = []
         self.possible_children = [] # list of tuples (piece, position, rotation)
-        self.level = None
         
         self.piece = piece
         self.pos = pos
@@ -21,12 +20,6 @@ class TetrisNode:
         
         self.num_playouts = 0
         self.total_reward = 0
-
-        if parent:
-            self.level = 1
-        else:
-            self.level = parent.level + 1
-        
 
     def update():
         pass
@@ -253,7 +246,7 @@ class TetrisMCTS:
 class TetrisAI:
     def __init__(self, render=True):
         self.game = Tetris()
-        self.mcts = TetrisMCTS(simulation_count=SIM_COUNT, max_playout_depth=MAX_DEPTH, game=self.game)
+        self.mcts = TetrisMCTS(max_simulations=SIM_COUNT, max_playout_depth=MAX_DEPTH, game=self.game)
 
     def play_game(self):
         moves = 0
