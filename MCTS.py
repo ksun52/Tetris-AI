@@ -41,7 +41,7 @@ class TetrisMCTS:
         self.root = TetrisNode(None, None, None, None)
         root_next_states = self.game.get_next_states()
         root_next_actions = root_next_states.keys()
-        self.root.possible_children = [TetrisNode(self, self.game.current_piece, action[0], action[1]) for action in root_next_actions]
+        self.root.possible_children = [TetrisNode(self.root, self.game.current_piece, action[0], action[1]) for action in root_next_actions]
     
     def get_best_move(self):
         '''
@@ -53,21 +53,25 @@ class TetrisMCTS:
         # repeat this for max_simulations count
         for _ in range(self.simulation_count):
             # save a new state of the game from here -- update it as you traverse through in select 
-            self.MCTS_game_state = copy(self.game)
+            self.MCTS_game_state = copy.deepcopy(self.game)
             
             # want to ensure that we're not learning conditioned to a fixed bag i.e. learning the bag itself
             # shuffle the game's bag for this simulation run 
             self.MCTS_game_state.bag.append(self.MCTS_game_state.next_piece)
             random.shuffle(self.MCTS_game_state.bag)
             self.MCTS_game_state.next_piece = self.MCTS_game_state.bag.pop()
-
+            
             to_expand = self._select(self.root)
+            # print("selected node")
+            # print(to_expand)
             to_play_through = self._expand(to_expand)
+            # print("to playthrough")
+            # print(to_play_through)
             end_state_value = self._simulate(to_play_through)
+            
             self._backpropagate(to_play_through, end_state_value)
         
-        #TODO: update the actual self.game 
-
+        print(len(self.root.children))
 
         return max(self.root.children, key=lambda child: child.num_playouts)
 
@@ -75,6 +79,7 @@ class TetrisMCTS:
     def _ucb(self, nodes):
         # decide which node to select via ucb-1 node
         max_score = float('-inf')
+        # print(nodes)
         best_node = nodes[0]
         for node in nodes:
             exploitation = node.total_reward / node.num_playouts
@@ -93,24 +98,39 @@ class TetrisMCTS:
         Returns a node with "possible_children" and passes it to expand 
         
         TODO: what if it doesnt have any children
+        TODO: nodes should 
         '''
-        
+        # print("Selecting Node")
+        level = 0
         while node.possible_children and not self.MCTS_game_state.game_over:
-
+            # print("level" + str(level))
             # select this node if it has possible children not explored
-            possible_children_w_piece = [pc for pc in node.possible_children if pc.piece == self.MCTS_game_state.current_piece]
-            explored_children_w_piece = [c for c in node.children if c.piece == self.MCTS_game_state.current_piece]
-            if len(explored_children_w_piece) < len(possible_children_w_piece):
+            # possible_children_w_piece = [pc for pc in node.possible_children if pc.piece == self.MCTS_game_state.current_piece]
+            # explored_children_w_piece = [c for c in node.children if c.piece == self.MCTS_game_state.current_piece]
+            # if len(explored_children_w_piece) < len(possible_children_w_piece):
+            if len(node.children) < len(node.possible_children):
+                # print(node == self.root)
                 return node
+            print("------------------------")
+            # if len(possible_children_w_piece) ==  0:
+            if len(node.possible_children) ==  0:
+                print("no children")
+                return node
+            # print(len(explored_children_w_piece))
+            # print(len(possible_children_w_piece))
+            print(len(node.possible_children))
+            print(len(node.children))
 
             # otherwise use UCB to traverse down -- UCB over the possible children that match the current piece 
-            next_node = self._ucb(explored_children_w_piece)
+            # next_node = self._ucb(explored_children_w_piece)
+            next_node = self._ucb(node.children)
             
             # after selecting the next node to go down, play a turn using the Tetris game 
             # only play the piece if you can move down a level with UCB 
             self.MCTS_game_state.play(next_node.pos, next_node.rotation)
             node = next_node
 
+        # print(node == self.root)
         # it is possible to traverse such that UCB selects a node with game over
         return node
 
@@ -159,10 +179,11 @@ class TetrisMCTS:
         
 
         # random expansion for now, could choose with model/heuristic when available
-        possible_children_w_piece = [pc for pc in node.possible_children if pc.piece == self.MCTS_game_state.current_piece]
-        explored_children_w_piece = [c for c in node.children if c.piece == self.MCTS_game_state.current_piece]
-        unvisited = set(possible_children_w_piece) - set(explored_children_w_piece)
-        return random.choice(unvisited)
+        # possible_children_w_piece = [pc for pc in node.possible_children if pc.piece == self.MCTS_game_state.current_piece]
+        # explored_children_w_piece = [c for c in node.children if c.piece == self.MCTS_game_state.current_piece]
+        # unvisited = set(possible_children_w_piece) - set(explored_children_w_piece)
+        unvisited = set(node.possible_children) - set(node.children)
+        return random.choice(list(unvisited))
 
 
     def _expand(self, node):
@@ -174,22 +195,36 @@ class TetrisMCTS:
 
         TODO: what if node doesnt have any children
         ''' 
-        
+
         if not node.possible_children or self.MCTS_game_state.game_over:
+            return node
+        if len(node.possible_children) == len(node.children):
             return node
 
         # selects a successor node to play through from the node's unexplored possible children 
         play_through = self.expansion_policy(node)
-        self.MCTS_game_state.play(node.pos, node.rotation)
+        # print("play")
+        # print(play_through)
+        print("move:")
+        print(node.piece)
+        print(node.pos)
+        print(node.rotation)
+        if node != self.root:
+            self.MCTS_game_state.play(node.pos, node.rotation)
 
         # generate "possible_children" set for the new child node 
         tetris_game_states = {}
-        possible_pieces = copy(self.MCTS_game_state.bag).append(self.MCTS_game_state.next_piece)
+        possible_pieces = copy.deepcopy(self.MCTS_game_state.bag)
+        possible_pieces.append(self.MCTS_game_state.next_piece)
+        # print(possible_pieces)
         for piece_id in possible_pieces:
-            tetris_game_states.update(self._gen_children(play_through, piece_id))
+            # tetris_game_states.update(self._gen_children(play_through, piece_id))
+            tetris_game_states.update(self._gen_children(piece_id))
 
         piece_states = tetris_game_states.keys()
-        play_through.possible_children = [TetrisNode(play_through, state[0], state[1], state[2]) for state in piece_states]
+        # print("bitch")
+        # print(node)
+        play_through.possible_children = [TetrisNode(node, state[0], state[1], state[2]) for state in piece_states]
         
         # append play_through node to the current node and return play_through 
         node.children.append(play_through)
@@ -204,7 +239,8 @@ class TetrisMCTS:
     def playout_policy(self, current_piece):
         # select random position and rotation such that you can place the current piece
         possible_moves = self.MCTS_game_state.get_next_states().keys()
-        return random.choice(possible_moves)
+        # print(list(possible_moves))
+        return random.choice(list(possible_moves))
     
     def _simulate(self, node):
         '''
@@ -230,9 +266,13 @@ class TetrisMCTS:
         return self.MCTS_game_state.score
 
     def _backpropagate(self, node, reward):
+        # print(node)
         while node.parent != None:
+            # print("jio")
             node.total_reward += reward * 1.0
             node.num_playouts += 1.0
+            # print(node.parent)
+            # print(self.root)
             node = node.parent
         
         # backprop on root node
@@ -240,7 +280,9 @@ class TetrisMCTS:
         node.num_playouts += 1.0
 
     def make_move(self, best_move):
-        self.game.play(best_move.pos, best_move.rotation, render=True, render_delay=1.0)
+        self.game.play(best_move.pos, best_move.rotation, render=True, render_delay=0.05)
+        # TODO: remove connections from root to rest of the tree
+        best_move.parent = None
         self.root = best_move   # move root down 
 
 class TetrisAI:
@@ -252,10 +294,14 @@ class TetrisAI:
         moves = 0
 
         while not self.game.game_over:
+            # self.mcts = TetrisMCTS(max_simulations=SIM_COUNT, max_playout_depth=MAX_DEPTH, game=self.game)
             # find the best move from MCTS 
+            # print("hello")
+            print(self.mcts.root)
             best_move = self.mcts.get_best_move()
             
             # play the game 
+            print("MOVE BEING PLAYED")
             self.mcts.make_move(best_move)
             moves += 1.0
 

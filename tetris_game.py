@@ -153,7 +153,10 @@ class Tetris:
     def _add_piece_to_board(self, piece, pos):
         '''Place a piece in the board, returning the resulting board'''        
         board = [x[:] for x in self.board]
+        # print(pos)
         for x, y in piece:
+            # print(x)
+            # print(y)
             board[y + pos[1]][x + pos[0]] = Tetris.MAP_BLOCK
         return board
 
