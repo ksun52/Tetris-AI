@@ -6,9 +6,8 @@ import random
 from tetris_game import Tetris
 from keras.models import Sequential, load_model
 from keras.layers import Dense
-import sys
-
 from constants import SIM_COUNT, MAX_DEPTH, UCB_C
+import sys
 
 
 class TetrisNode:
@@ -23,6 +22,8 @@ class TetrisNode:
 
         self.num_playouts = 0
         self.total_reward = 0
+
+        self.tetris_made = 0
 
 
 class TetrisMCTS:
@@ -39,24 +40,7 @@ class TetrisMCTS:
         root_children = self.game.get_next_states().keys()
         self.root.all_children = [TetrisNode(self.root, self.game.current_piece, action[0], action[1]) for action in root_children]
 
-        # if modelFile is not None:
-        self.model = load_model(modelFile)
-        # else:
-            # self.model = self._build_model()
-
-    def count_nodes(self, node):
-        # Base case: if the node is None, return 0
-        if node is None:
-            return 0
-        
-        # Start with 1 to count the current node
-        count = 1
-        
-        # Recursively count the children nodes
-        for child in node.visited_children:
-            count += self.count_nodes(child)
-        
-        return count
+        # self.model = load_model(modelFile)
 
 
     def get_best_move(self):
@@ -64,35 +48,24 @@ class TetrisMCTS:
         Issues a new game state copy for every simulation iteration -- allows us to use game's helper funcs 
         Every iteration is a new "game" that we must track 
         '''
-
-        print("--------------------------------")
-        for i in range(self.simulation_count):
-            # print(i)
+        for _ in range(self.simulation_count):
+            # print("--------------------------------")
             self.mcts_game = copy.deepcopy(self.game)
-            # children_valu = [child.total_reward/child.num_playouts for child in self.root.visited_children]
-            # print(children_valu)
 
-            # EVEN WITH COMMENTING THIS OUT IT DOESNT WORK.... THERE IS SOMETHING WRONG WITH CODE
-            # self.mcts_game.bag.append(self.mcts_game.next_piece)
-            # random.shuffle(self.mcts_game.bag)
-            # self.mcts_game.next_piece = self.mcts_game.bag.pop()
+            # THIS IS A PROBLEM -- IMAGINE IF 
+            self.mcts_game.bag.append(self.mcts_game.next_piece)
+            random.shuffle(self.mcts_game.bag)
+            self.mcts_game.next_piece = self.mcts_game.bag.pop()
             
             selected_node = self._select(self.root)
-            # print(selected_node.total_reward / (selected_node.num_playouts + 1))
 
             expanded_node = self._expand(selected_node)
             
             expanded_node_score = self._simulate(expanded_node)
 
             self._backpropagate(expanded_node, expanded_node_score)
-            # print(expanded_node_score)
         # print(self.root.visited_children)
         # print(self.root.all_children)
-        children_valu = [child.total_reward/child.num_playouts for child in self.root.visited_children]
-        print(children_valu)
-        print(self.count_nodes(self.root))
-        for child in self.root.all_children:
-            print(self.count_nodes(child))
         return max(self.root.visited_children, key=lambda child: child.total_reward/child.num_playouts)
 
 
@@ -136,21 +109,10 @@ class TetrisMCTS:
 
 
     def _ucb(self, nodes):
-        # max_score = float('-inf')
-        # best_node = nodes[0]
-        # for node in nodes:
-        #     exploitation = node.total_reward / node.num_playouts
-        #     exploration = np.sqrt(np.log(node.parent.num_playouts) / node.num_playouts)
-        #     score = exploitation + UCB_C * exploration
-
-        #     if score > max_score:
-        #         max_score = score
-        #         best_node = node
-        # return best_node
         max_score = float('-inf')
         best_node = nodes[0]
         for node in nodes:
-            exploitation = node.num_playouts
+            exploitation = node.total_reward / node.num_playouts
             exploration = np.sqrt(np.log(node.parent.num_playouts) / node.num_playouts)
             score = exploitation + UCB_C * exploration
 
@@ -169,7 +131,6 @@ class TetrisMCTS:
         '''
         # If the node does not have any children return this node.
         # print(len(node.visited_children))
-        # print(len(node.all_children))
         # print(len(node.all_children))
         while len(node.all_children) != 0 and not self.mcts_game.game_over:
 
@@ -231,7 +192,9 @@ class TetrisMCTS:
                 self.mcts_game.bag.append(self.mcts_game.current_piece)
             self.mcts_game.current_piece = expanded_node.piece
         # print(expanded_node.piece)
-        self.mcts_game.play(expanded_node.pos, expanded_node.rotation)
+        _, _, lines_cleared = self.mcts_game.play(expanded_node.pos, expanded_node.rotation)
+        if lines_cleared == 4:
+            self.expaned_node.tetris_made += 1
 
         # Create children for the expanded nodes for future selection
         children = {}
@@ -242,21 +205,18 @@ class TetrisMCTS:
         piece_states = children.keys()
         expanded_node.all_children = [TetrisNode(selected_node, move[0], move[1], move[2]) for move in piece_states]
 
+
         selected_node.visited_children.append(expanded_node)
         return expanded_node
-
-
+    
     def predict_value(self, state):
         '''Predicts the score for a certain state'''
         return self.model.predict(state, verbose=0)[0]
 
 
     def _playout_policy(self):
-        # next_states = self.mcts_game.get_next_states()
-        # max(next_states, key=lambda state: state.total_reward/child.num_playouts)
-
         # possible_moves = self.mcts_game.get_next_states().keys()
-        # return random.choice(list(possible_moves))
+        # return random.choice(list(possible_moves)
 
         next_states = {tuple(v):k for k, v in self.mcts_game.get_next_states().items()}
         # best_state = agent.best_state(next_states.keys())
@@ -279,52 +239,54 @@ class TetrisMCTS:
         return best_action
 
 
-    def _simulate(self, expanded_node):
-        if len(expanded_node.all_children) == 0 or self.mcts_game.game_over:
-            return self.mcts_game.score
     
-        # depth = 0
+    def _simulate(self, expanded_node):
+        # if len(expanded_node.all_children) == 0 or self.mcts_game.game_over:
+        #     return self.mcts_game.score
+    
+        depth = 0
         # while not self.mcts_game.game_over and depth < self.playout_depth:
+        #     # print("moving in simulation ")
         #     pos, rotation = self._playout_policy()
         #     self.mcts_game.play(pos, rotation)
         #     depth += 1
 
-        # return self.mcts_game.score
-        depth = 0
-        while  self.mcts_game.game_over and depth < self.playout_depth:
-            pos, rotation = self._playout_policy()
-            self.mcts_game.play(pos, rotation)
-            depth += 1
-        return self.mcts_game.score
+        state_props = self.mcts_game._get_board_props(self.mcts_game.board)
+        heuristic_value = (
+            -0.5 * state_props[1] +  # Holes
+            -0.3 * state_props[2] +  # Bumpiness
+            -0.2 * state_props[3]    # Height
+            # 0.2 * self.mcts_game.compute_score_increases_from_clearable_lines(self.mcts_game.board)
+        )
+        # print(state_props[1]*0.5)
+        # print(state_props[2]*0.2)
+        # print(state_props[3]*0.1)
+
+
+        heuristic_value += expanded_node.tetris_made * 5
+
+        return heuristic_value
 
 
     def _backpropagate(self, node, score):
-        state_props = self.mcts_game._get_board_props(self.mcts_game.board)
-        heuristic_value = (
-            -0.4 * state_props[1] +  # Holes
-            -0.1 * state_props[2] +  # Bumpiness
-            -0.3 * state_props[3]    # Height
-        ) / -10.0
+        # state_props = self.mcts_game._get_board_props(self.mcts_game.board)
+        # heuristic_value = (
+        #     -0.4 * state_props[1] +  # Holes
+        #     -0.1 * state_props[2] +  # Bumpiness
+        #     -0.3 * state_props[3]    # Height
+        # ) 
         # print(heuristic_value)
         # heuristic_value = heuristic_value * 10**(math.log10(score)-1)
         # print(heuristic_value)
         # score -= heuristic_value
         # print(score)
 
-        # while node.parent != None:
-        #     node.total_reward += score * 1.0
-        #     node.num_playouts += 1.0
-        #     node = node.parent
-        # node.total_reward += score * 1.0
-        # node.num_playouts += 1.0
-
-
-        node.total_reward = score * 1.0
-        node.num_playouts = 1.0
         while node.parent != None:
+            node.total_reward += score * 1.0
+            node.num_playouts += 1.0
             node = node.parent
-            node.total_reward += max(score, node.total_reward) * 1.0
-            node.num_playouts = 1.0
+        node.total_reward += score * 1.0
+        node.num_playouts += 1.0
 
         # while node.parent != None:
         #     node.total_reward += heuristic_value * 1.0
@@ -335,28 +297,23 @@ class TetrisMCTS:
 
 
     def make_move(self, best_move):
-        self.game.play(best_move.pos, best_move.rotation, render=True, render_delay=0.01)
+        self.game.play(best_move.pos, best_move.rotation, render=True, render_delay=0.005)
         best_move.parent = None
         self.root = best_move
 
 
 class TetrisAI:
-    def __init__(self, render=True, modelFile=sys.argv[1]):
+    def __init__(self, render=True):
         self.game = Tetris()
-        self.mcts = TetrisMCTS(max_simulations=SIM_COUNT, max_playout_depth=MAX_DEPTH, game=self.game, modelFile=sys.argv[1])
-        
-        # if modelFile is not None:
-        #     self.model = load_model(modelFile)
-        # else:
-        #     self.model = self._build_model()
-
-
+        # self.mcts = TetrisMCTS(max_simulations=SIM_COUNT, max_playout_depth=MAX_DEPTH, game=self.game, modelFile=sys.argv[1])
+        self.mcts = TetrisMCTS(max_simulations=SIM_COUNT, max_playout_depth=MAX_DEPTH, game=self.game)
 
     def play_game(self):
         moves = 0
 
         while not self.game.game_over:
-            self.mcts = TetrisMCTS(max_simulations=SIM_COUNT, max_playout_depth=MAX_DEPTH, game=self.game, modelFile=sys.argv[1])
+            # self.mcts = TetrisMCTS(max_simulations=SIM_COUNT, max_playout_depth=MAX_DEPTH, game=self.game, modelFile=sys.argv[1])
+            self.mcts = TetrisMCTS(max_simulations=SIM_COUNT, max_playout_depth=MAX_DEPTH, game=self.game)
             best_move = self.mcts.get_best_move()
 
             self.mcts.make_move(best_move)
@@ -370,4 +327,9 @@ if __name__ == "__main__":
     ai = TetrisAI(render=True)
     score = ai.play_game()
     print(score)
+
+
+
+
+    
     # print(moves)

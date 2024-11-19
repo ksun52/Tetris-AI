@@ -81,6 +81,8 @@ class Tetris:
         self.next_piece = self.bag.pop()
         self._new_round()
         self.score = 0
+        self.num_tetris = 0
+        self.num_moves = 0
         return self._get_board_props(self.board)
 
 
@@ -170,6 +172,10 @@ class Tetris:
             # Add new lines at the top
             for _ in lines_to_clear:
                 board.insert(0, [0 for _ in range(Tetris.BOARD_WIDTH)])
+
+        if len(lines_to_clear) == 5:
+            self.tetris += 1
+
         return len(lines_to_clear), board
 
 
@@ -226,6 +232,38 @@ class Tetris:
         return sum_height, max_height, min_height
 
 
+    def compute_score_increases_from_clearable_lines(self, board=None):
+        '''
+        Computes the score increase from clearable lines for a board.
+        It finds the maximum number of lines that can be cleared from any position
+        and returns the square of that number.
+        '''
+        if board is None:
+            board = self.board
+
+        # Get all possible next states from the current position
+        next_states = self.get_all_possible_states()
+
+        # Variable to store the maximum number of lines that can be cleared
+        max_lines_cleared = 0
+
+        # Iterate over all possible next states
+        for state_props in next_states.values():
+            lines_cleared = state_props[0]  # Number of lines cleared in this state
+            if lines_cleared > max_lines_cleared:
+                max_lines_cleared = lines_cleared
+
+        # Compute the square of the maximum number of lines cleared
+        return max_lines_cleared ** 2
+
+
+    def tetris_counter(self):
+        '''
+        Returns the number of moves played so far and the number of tetrises made
+        '''
+        return self.num_tetris, self.num_moves
+
+
     def _get_board_props(self, board):
         '''Get properties of the board'''
         lines, board = self._clear_lines(board)
@@ -233,6 +271,40 @@ class Tetris:
         total_bumpiness, max_bumpiness = self._bumpiness(board)
         sum_height, max_height, min_height = self._height(board)
         return [lines, holes, total_bumpiness, sum_height]
+
+
+    def get_all_possible_states(self):
+        '''Get all possible next states'''
+        states = {}
+        for piece_id in range(8):
+            if piece_id == 6: 
+                rotations = [0]
+            elif piece_id == 0:
+                rotations = [0, 90]
+            else:
+                rotations = [0, 90, 180, 270]
+
+            # For all rotations
+            for rotation in rotations:
+                piece = Tetris.TETROMINOS[piece_id][rotation]
+                min_x = min([p[0] for p in piece])
+                max_x = max([p[0] for p in piece])
+
+                # For all positions
+                for x in range(-min_x, Tetris.BOARD_WIDTH - max_x):
+                    pos = [x, 0]
+
+                    # Drop piece
+                    while not self._check_collision(piece, pos):
+                        pos[1] += 1
+                    pos[1] -= 1
+
+                    # Valid move
+                    if pos[1] >= 0:
+                        board = self._add_piece_to_board(piece, pos)
+                        states[(piece_id, x, rotation)] = self._get_board_props(board)
+
+        return states
 
 
     def get_next_states(self):
@@ -300,7 +372,9 @@ class Tetris:
         if self.game_over:
             score -= 2
 
-        return score, self.game_over
+        self.num_moves += 1
+
+        return score, self.game_over, lines_cleared
 
 
     def render(self):
