@@ -270,13 +270,13 @@ class Tetris:
         holes = self._number_of_holes(board)
         total_bumpiness, max_bumpiness = self._bumpiness(board)
         sum_height, max_height, min_height = self._height(board)
-        return [lines, holes, total_bumpiness, sum_height]
+        return [lines, holes, total_bumpiness, sum_height, max_height]
 
 
     def get_all_possible_states(self):
         '''Get all possible next states'''
         states = {}
-        for piece_id in range(8):
+        for piece_id in range(7):
             if piece_id == 6: 
                 rotations = [0]
             elif piece_id == 0:
