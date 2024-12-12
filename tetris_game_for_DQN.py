@@ -84,6 +84,58 @@ class Tetris:
         self.num_tetris = 0
         self.num_moves = 0
         return self._get_board_props(self.board)
+    
+
+    def get_min_height(self):
+        height = len(self.board)
+        width = len(self.board[0])-1
+        min_height = 0
+        
+        for col in range(width):
+            found_block = False
+            col_height = 0
+            for row in range(height):
+                if self.board[row][col] == 1:
+                    col_height = height - row
+                    if min_height == 0 or col_height < min_height:
+                        min_height = col_height
+                    break
+        return min_height
+
+    def get_max_height(self):
+        height = len(self.board)
+        width = len(self.board[0])-1
+        max_height = 0
+        
+        for col in range(width):
+            for row in range(height):
+                if self.board[row][col] == 1:
+                    col_height = height - row
+                    if col_height > max_height:
+                        max_height = col_height
+                    break
+        return max_height
+
+    def get_current_height(self):
+        for y in range(len(self.board)):
+            if any(cell == 1 for cell in self.board[y]):
+                print(len(self.board) - y)
+                return len(self.board) - y
+        return 0
+    
+    def has_holes_in_bottom_rows(self, rows=6):
+        height = len(self.board)
+        width = len(self.board[0])
+        start_row = max(0, height - rows)
+        
+        for col in range(width-1):
+            found_block = False
+            for row in range(start_row, height):
+                if self.board[row][col] == 1:
+                    found_block = True
+                elif found_block and self.board[row][col] == 0:
+                    return True
+        return False
 
 
     def _get_rotated_piece(self):
@@ -267,7 +319,7 @@ class Tetris:
         holes = self._number_of_holes(board)
         total_bumpiness, max_bumpiness = self._bumpiness(board)
         sum_height, max_height, min_height = self._height(board)
-        return [lines, holes, total_bumpiness, sum_height, max_height]
+        return [lines, holes, total_bumpiness, sum_height]
 
 
     def get_all_possible_states(self):
@@ -304,7 +356,7 @@ class Tetris:
         return states
 
 
-    def get_next_states(self):
+    def get_next_regular_states(self):
         '''Get all possible next states'''
         states = {}
         piece_id = self.current_piece
@@ -324,6 +376,40 @@ class Tetris:
 
             # For all positions
             for x in range(-min_x, Tetris.BOARD_WIDTH - max_x):
+                pos = [x, 0]
+
+                # Drop piece
+                while not self._check_collision(piece, pos):
+                    pos[1] += 1
+                pos[1] -= 1
+
+                # Valid move
+                if pos[1] >= 0:
+                    board = self._add_piece_to_board(piece, pos)
+                    states[(x, rotation)] = self._get_board_props(board)
+
+        return states
+    
+    def get_next_small_states(self):
+        '''Get all possible next states'''
+        states = {}
+        piece_id = self.current_piece
+        
+        if piece_id == 6: 
+            rotations = [0]
+        elif piece_id == 0:
+            rotations = [0, 90]
+        else:
+            rotations = [0, 90, 180, 270]
+
+        # For all rotations
+        for rotation in rotations:
+            piece = Tetris.TETROMINOS[piece_id][rotation]
+            min_x = min([p[0] for p in piece])
+            max_x = max([p[0] for p in piece])
+
+            # For all positions
+            for x in range(-min_x, Tetris.BOARD_WIDTH - 1 - max_x):
                 pos = [x, 0]
 
                 # Drop piece
